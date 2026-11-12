@@ -1,0 +1,49 @@
+# Render Blueprint: the API as a web service plus a managed Postgres database.
+# Deploy: Render Dashboard -> New -> Blueprint -> pick this repo. See DEPLOY.md.
+
+services:
+  - type: web
+    name: job-tracker-api
+    runtime: node
+    plan: free
+    region: virginia # must match the database region for the internal connection
+    # Dev dependencies are needed to compile TypeScript; --include=dev keeps them even though
+    # NODE_ENV=production.
+    buildCommand: npm ci --include=dev && npm run build
+    # Applies pending migrations, then starts the server (exec'd so it receives SIGTERM directly).
+    startCommand: npm run start:prod
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_VERSION
+        value: '24'
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        fromDatabase:
+          name: job-tracker-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true # random 256-bit value, generated once
+      - key: JWT_EXPIRES_IN
+        value: 7d
+      # The deployed frontend's origin, e.g. https://job-tracker-web.onrender.com
+      # (comma-separate several). You're prompted for it when creating the Blueprint.
+      - key: FRONTEND_URL
+        sync: false
+      # `none` because a frontend on another *.onrender.com subdomain is a different site.
+      # Use `lax` if the frontend and API share a domain (e.g. app.example.com + api.example.com).
+      - key: COOKIE_SAMESITE
+        value: none
+      # Render runs the app behind one proxy; needed for per-client rate limiting.
+      - key: TRUST_PROXY
+        value: '1'
+      - key: LOG_LEVEL
+        value: info
+
+databases:
+  - name: job-tracker-db
+    plan: free
+    region: virginia
+    databaseName: tracker
+    user: tracker
+    postgresMajorVersion: '16'

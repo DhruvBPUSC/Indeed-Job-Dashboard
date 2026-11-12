@@ -1,0 +1,109 @@
+// The datasource URL is configured in prisma.config.ts.
+// All timestamps are stored as timestamptz (UTC).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum JobType {
+  INTERNSHIP
+  PART_TIME
+  FULL_TIME_ENTRY
+}
+
+enum ApplicationStatus {
+  SAVED
+  APPLIED
+  IN_PROGRESS
+  INTERVIEW
+  OFFER
+  REJECTED
+  WITHDRAWN
+}
+
+enum InterviewType {
+  PHONE
+  VIRTUAL
+  ONSITE
+}
+
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  name         String
+  /// Stored lowercased; normalize in the auth service before writes and lookups.
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  applications Application[]
+}
+
+model Job {
+  id          String   @id @default(uuid()) @db.Uuid
+  title       String
+  company     String
+  location    String
+  jobType     JobType
+  description String   @db.Text
+  url         String
+  postedAt    DateTime @db.Timestamptz(3)
+
+  applications Application[]
+
+  @@index([postedAt])
+  @@index([jobType, postedAt])
+}
+
+model Application {
+  id          String            @id @default(uuid()) @db.Uuid
+  userId      String            @db.Uuid
+  jobId       String            @db.Uuid
+  status      ApplicationStatus @default(SAVED)
+  /// Set automatically the first time status leaves SAVED.
+  dateApplied DateTime?         @db.Timestamptz(3)
+  notes       String?           @db.Text
+  createdAt   DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime          @updatedAt @db.Timestamptz(3)
+
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Restrict: a job that users have applied to can't be deleted out from under them.
+  job           Job             @relation(fields: [jobId], references: [id], onDelete: Restrict)
+  statusHistory StatusHistory[]
+  interviews    Interview[]
+
+  @@unique([userId, jobId])
+  @@index([userId, status])
+  @@index([userId, dateApplied])
+  @@index([jobId])
+}
+
+model StatusHistory {
+  id            String             @id @default(uuid()) @db.Uuid
+  applicationId String             @db.Uuid
+  /// Null for the row written when the application is created.
+  fromStatus    ApplicationStatus?
+  toStatus      ApplicationStatus
+  changedAt     DateTime           @default(now()) @db.Timestamptz(3)
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, changedAt])
+}
+
+model Interview {
+  id            String        @id @default(uuid()) @db.Uuid
+  applicationId String        @db.Uuid
+  scheduledAt   DateTime      @db.Timestamptz(3)
+  type          InterviewType
+  notes         String?       @db.Text
+
+  application Application @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId, scheduledAt])
+}

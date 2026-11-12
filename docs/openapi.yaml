@@ -1,0 +1,1202 @@
+openapi: 3.0.3
+info:
+  title: Job Application Tracker API
+  version: 0.1.0
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+  description: |
+    Backend API for the Group 4 job application tracker dashboard.
+
+    Authentication uses a JWT stored in an httpOnly cookie named `token` (Secure in production;
+    SameSite from COOKIE_SAMESITE, `lax` by default, `none` when the frontend is on another
+    site). Writes from other origins are rejected with 403 `FORBIDDEN_ORIGIN`. Register or log in to receive it; browsers send it automatically.
+    `/api/auth/*` is rate-limited per IP (default 20 requests per 15 minutes).
+
+    **Trying it out:** in development this page is served at `/api/docs`. Call
+    `POST /api/auth/login` (demo account: `demo@example.com` / `DemoPass123!` after
+    `npm run db:seed`) and the cookie is set for every other request on this page.
+
+    **CORS:** browsers may call the API with credentials only from the origins in
+    `FRONTEND_URL`. Every response carries an `X-Request-Id` header that matches the server log.
+
+    **Validation:** every route validates its body, path, and query with Zod and rejects
+    unknown fields, so a misspelled parameter fails with 400 instead of being ignored.
+
+    **Conventions:** errors are `{ "error": { "code", "message", "details"? } }`; lists are
+    `{ "data", "page", "pageSize", "total" }`; dates are ISO 8601 strings in UTC.
+servers:
+  - url: /
+    description: Same origin as this page
+tags:
+  - name: system
+    description: 'Service health'
+  - name: auth
+    description: 'Register, log in, and log out (public, rate-limited)'
+  - name: users
+    description: "The logged-in user's profile"
+  - name: jobs
+    description: 'Browse and search job listings'
+  - name: applications
+    description: "The user's tracked applications and their interviews"
+  - name: dashboard
+    description: 'Summary cards, recent applications, and upcoming interviews'
+paths:
+  /api/health:
+    get:
+      summary: Health check
+      operationId: getHealth
+      security: [] # public
+      tags: [system]
+      responses:
+        '200':
+          description: Service is up
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status]
+                properties:
+                  status:
+                    type: string
+                    enum: [ok]
+
+        '400':
+          $ref: '#/components/responses/ValidationError'
+  /api/auth/register:
+    post:
+      summary: Create an account and start a session
+      operationId: register
+      security: [] # public
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterRequest'
+      responses:
+        '201':
+          description: Account created. Sets the auth cookie.
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/AuthCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrigin'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '409':
+          description: Email already registered (`EMAIL_TAKEN`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/auth/login:
+    post:
+      summary: Log in and start a session
+      operationId: login
+      security: [] # public
+      tags: [auth]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: Logged in. Sets the auth cookie.
+          headers:
+            Set-Cookie:
+              $ref: '#/components/headers/AuthCookie'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrigin'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '401':
+          description: >
+            Wrong email or password (`INVALID_CREDENTIALS`, message "Invalid email or password").
+            The same response is returned whether or not the email exists.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/auth/logout:
+    post:
+      summary: End the session
+      description: Clears the auth cookie. Succeeds even if not logged in.
+      operationId: logout
+      security: [] # public
+      tags: [auth]
+      responses:
+        '204':
+          description: Logged out
+        '400':
+          description: A body was sent and it was not valid JSON (`BAD_REQUEST`). No body is needed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrigin'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+
+  /api/me:
+    get:
+      summary: Get the logged-in user
+      operationId: getMe
+      tags: [users]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: The current user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    patch:
+      summary: Update the logged-in user's profile
+      description: Only `name` can be changed for now. Any other field is rejected with 400.
+      operationId: updateMe
+      tags: [users]
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMeRequest'
+      responses:
+        '200':
+          description: The updated user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrigin'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/jobs:
+    get:
+      summary: List and search jobs
+      description: >
+        Newest first (by `postedAt`). Each job includes the current user's application for it,
+        or nulls if they haven't tracked it.
+      operationId: listJobs
+      tags: [jobs]
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: q
+          in: query
+          description: Case-insensitive substring match on title or company. Blank is ignored.
+          schema:
+            type: string
+            maxLength: 100
+          example: intern
+        - name: jobType
+          in: query
+          schema:
+            $ref: '#/components/schemas/JobType'
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: A page of jobs
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JobListResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/jobs/{id}:
+    get:
+      summary: Get one job
+      operationId: getJob
+      tags: [jobs]
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: The job
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [job]
+                properties:
+                  job:
+                    $ref: '#/components/schemas/Job'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /api/applications:
+    get:
+      summary: List the current user's applications
+      description: >
+        Only the logged-in user's applications are returned. "Saved Jobs" is `?status=SAVED`.
+      operationId: listApplications
+      tags: [applications]
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: status
+          in: query
+          description: >
+            Filter by status. Repeat the param (`?status=APPLIED&status=INTERVIEW`) or
+            comma-separate (`?status=APPLIED,INTERVIEW`).
+          style: form
+          explode: true
+          schema:
+            type: array
+            items:
+              $ref: '#/components/schemas/ApplicationStatus'
+        - name: q
+          in: query
+          description: Case-insensitive substring match on the job's title or company.
+          schema:
+            type: string
+            maxLength: 100
+        - name: sort
+          in: query
+          description: '`dateApplied` always puts SAVED (no dateApplied) last.'
+          schema:
+            type: string
+            enum: [dateApplied, updatedAt, company]
+            default: updatedAt
+        - name: order
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+            default: desc
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+      responses:
+        '200':
+          description: A page of applications
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplicationListResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      summary: Track a job
+      description: >
+        Creates an application with its first StatusHistory row. If `status` isn't SAVED,
+        `dateApplied` is set to now.
+      operationId: createApplication
+      tags: [applications]
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateApplicationRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplicationDetailResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrigin'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: Job not found (`NOT_FOUND`)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '409':
+          description: >
+            The user already has an application for this job (`APPLICATION_EXISTS`).
+            `details.applicationId` is the existing application's id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /api/applications/stats/by-status:
+    get:
+      summary: Count the current user's applications per status
+      description: >
+        For the My Applications tabs. One count per status (zeros included) plus `total`
+        (every application, SAVED included: the "All" tab). Accepts the same `q` search as the
+        list, so counts match what the list shows.
+      operationId: getApplicationStatsByStatus
+      tags: [applications]
+      security:
+        - cookieAuth: []
+      parameters:
+        - name: q
+          in: query
+          description: Case-insensitive substring match on the job's title or company.
+          schema:
+            type: string
+            maxLength: 100
+      responses:
+        '200':
+          description: Counts per status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplicationStatusCounts'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /api/applications/{id}:
+    parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+    get:
+      summary: Get one application
+      description: Includes the full job, status history (newest first), and interviews (soonest first).
+      operationId: getApplication
+      tags: [applications]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: The application
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplicationDetailResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ApplicationNotFound'
+    patch:
+      summary: Update status and/or notes
+      description: >
+        A status change writes a StatusHistory row in the same transaction. `dateApplied` is set
+        the first time the status leaves SAVED and never changes after that. Setting the
+        current status again is a no-op (no history row).
+      operationId: updateApplication
+      tags: [applications]
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateApplicationRequest'
+      responses:
+        '200':
+          description: The updated application
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplicationDetailResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrigin'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ApplicationNotFound'
+    delete:
+      summary: Delete an application
+      description: Also deletes its status history and interviews.
+      operationId: deleteApplication
+      tags: [applications]
+      security:
+        - cookieAuth: []
+      responses:
+        '204':
+          description: Deleted
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrigin'
+        '404':
+          $ref: '#/components/responses/ApplicationNotFound'
+
+  /api/applications/{id}/interviews:
+    parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+    post:
+      summary: Add an interview
+      operationId: createInterview
+      tags: [applications]
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInterviewRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InterviewResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrigin'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ApplicationNotFound'
+
+  /api/applications/{id}/interviews/{interviewId}:
+    parameters:
+      - $ref: '#/components/parameters/ApplicationId'
+      - name: interviewId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      summary: Update an interview
+      operationId: updateInterview
+      tags: [applications]
+      security:
+        - cookieAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateInterviewRequest'
+      responses:
+        '200':
+          description: The updated interview
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InterviewResponse'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrigin'
+        '413':
+          $ref: '#/components/responses/PayloadTooLarge'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/InterviewNotFound'
+    delete:
+      summary: Delete an interview
+      operationId: deleteInterview
+      tags: [applications]
+      security:
+        - cookieAuth: []
+      responses:
+        '204':
+          description: Deleted
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/ForbiddenOrigin'
+        '404':
+          $ref: '#/components/responses/InterviewNotFound'
+
+  /api/dashboard/summary:
+    get:
+      summary: Dashboard summary for the logged-in user
+      description: >
+        Card counts come from one groupBy over the user's applications, mapped to cards by
+        `src/modules/dashboard/buckets.ts`. Total excludes SAVED. In Progress currently includes
+        APPLIED and IN_PROGRESS.
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      security:
+        - cookieAuth: []
+      responses:
+        '200':
+          description: The summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DashboardSummary'
+        '400':
+          $ref: '#/components/responses/ValidationError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: token
+
+  headers:
+    AuthCookie:
+      description: '`token=<jwt>; Path=/; Expires=<date>; HttpOnly; SameSite=<COOKIE_SAMESITE>` (+ `Secure` in production)'
+      schema:
+        type: string
+
+  parameters:
+    ApplicationId:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    Page:
+      name: page
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        default: 1
+    PageSize:
+      name: pageSize
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 50
+        default: 20
+
+  responses:
+    ForbiddenOrigin:
+      description: >
+        A browser request from an origin not in FRONTEND_URL (`FORBIDDEN_ORIGIN`). Applies to
+        every POST/PATCH/DELETE that carries an Origin header (CSRF protection).
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    PayloadTooLarge:
+      description: Body is over the size limit (`PAYLOAD_TOO_LARGE`; 100kb by default, set by BODY_LIMIT)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ApplicationNotFound:
+      description: >
+        No such application for this user (`NOT_FOUND`). Another user's application also returns
+        404, never 403.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    InterviewNotFound:
+      description: No such interview under this user's application (`NOT_FOUND`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: Resource not found (`NOT_FOUND`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    ValidationError:
+      description: >
+        Request failed validation (`VALIDATION_ERROR`; `details` holds the Zod issues), or the
+        body was not valid JSON (`BAD_REQUEST`). Unknown fields in the body, path, or query
+        string are rejected, not ignored.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing, invalid, or expired auth cookie (`UNAUTHORIZED`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    RateLimited:
+      description: Too many requests to /api/auth/* from this IP (`RATE_LIMITED`)
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              example: NOT_FOUND
+            message:
+              type: string
+            details: {}
+
+    RegisterRequest:
+      type: object
+      additionalProperties: false
+      required: [name, email, password]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          example: Cayden Willey
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: Trimmed and lowercased before saving.
+          example: cayden@example.com
+        password:
+          type: string
+          format: password
+          minLength: 8
+          maxLength: 128
+
+    LoginRequest:
+      type: object
+      additionalProperties: false
+      required: [email, password]
+      properties:
+        email:
+          type: string
+          format: email
+          maxLength: 254
+          description: Trimmed and lowercased before lookup.
+          example: demo@example.com
+        password:
+          type: string
+          format: password
+          minLength: 1
+          maxLength: 128
+          example: DemoPass123!
+
+    UpdateMeRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+          description: Trimmed before saving.
+          example: Cayden W.
+
+    User:
+      type: object
+      description: Public user fields. `passwordHash` is never included.
+      required: [id, name, email, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        email:
+          type: string
+          format: email
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    UserResponse:
+      type: object
+      required: [user]
+      properties:
+        user:
+          $ref: '#/components/schemas/User'
+
+    JobType:
+      type: string
+      enum: [INTERNSHIP, PART_TIME, FULL_TIME_ENTRY]
+
+    ApplicationStatus:
+      type: string
+      enum: [SAVED, APPLIED, IN_PROGRESS, INTERVIEW, OFFER, REJECTED, WITHDRAWN]
+
+    Job:
+      type: object
+      required:
+        [
+          id,
+          title,
+          company,
+          location,
+          jobType,
+          description,
+          url,
+          postedAt,
+          applicationId,
+          applicationStatus,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          example: Software Engineering Intern
+        company:
+          type: string
+          example: Blackbaud
+        location:
+          type: string
+          example: Charleston, SC
+        jobType:
+          $ref: '#/components/schemas/JobType'
+        description:
+          type: string
+        url:
+          type: string
+          format: uri
+        postedAt:
+          type: string
+          format: date-time
+        applicationId:
+          type: string
+          format: uuid
+          nullable: true
+          description: The current user's application for this job, or null if untracked.
+        applicationStatus:
+          type: string
+          enum: [SAVED, APPLIED, IN_PROGRESS, INTERVIEW, OFFER, REJECTED, WITHDRAWN, null]
+          nullable: true
+          description: The current user's application status, or null if untracked.
+
+    JobListResponse:
+      type: object
+      required: [data, page, pageSize, total]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Job'
+        page:
+          type: integer
+          example: 1
+        pageSize:
+          type: integer
+          example: 20
+        total:
+          type: integer
+          description: Total matching jobs across all pages.
+          example: 40
+
+    InterviewType:
+      type: string
+      enum: [PHONE, VIRTUAL, ONSITE]
+
+    Notes:
+      type: string
+      maxLength: 5000
+      nullable: true
+      description: Trimmed; blank is stored as null.
+
+    ApplicationListItem:
+      type: object
+      required: [id, jobId, status, dateApplied, notes, createdAt, updatedAt, job]
+      properties:
+        id:
+          type: string
+          format: uuid
+        jobId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/ApplicationStatus'
+        dateApplied:
+          type: string
+          format: date-time
+          nullable: true
+          description: Set automatically the first time status leaves SAVED.
+        notes:
+          $ref: '#/components/schemas/Notes'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        job:
+          type: object
+          required: [id, title, company]
+          properties:
+            id:
+              type: string
+              format: uuid
+            title:
+              type: string
+            company:
+              type: string
+
+    ApplicationDetail:
+      type: object
+      required:
+        [
+          id,
+          jobId,
+          status,
+          dateApplied,
+          notes,
+          createdAt,
+          updatedAt,
+          job,
+          statusHistory,
+          interviews,
+        ]
+      properties:
+        id:
+          type: string
+          format: uuid
+        jobId:
+          type: string
+          format: uuid
+        status:
+          $ref: '#/components/schemas/ApplicationStatus'
+        dateApplied:
+          type: string
+          format: date-time
+          nullable: true
+        notes:
+          $ref: '#/components/schemas/Notes'
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        job:
+          $ref: '#/components/schemas/JobFields'
+        statusHistory:
+          type: array
+          description: Newest first.
+          items:
+            $ref: '#/components/schemas/StatusHistoryEntry'
+        interviews:
+          type: array
+          description: Soonest first.
+          items:
+            $ref: '#/components/schemas/Interview'
+
+    JobFields:
+      type: object
+      required: [id, title, company, location, jobType, description, url, postedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        company:
+          type: string
+        location:
+          type: string
+        jobType:
+          $ref: '#/components/schemas/JobType'
+        description:
+          type: string
+        url:
+          type: string
+          format: uri
+        postedAt:
+          type: string
+          format: date-time
+
+    StatusHistoryEntry:
+      type: object
+      required: [id, fromStatus, toStatus, changedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        fromStatus:
+          type: string
+          enum: [SAVED, APPLIED, IN_PROGRESS, INTERVIEW, OFFER, REJECTED, WITHDRAWN, null]
+          nullable: true
+          description: Null for the row written when the application was created.
+        toStatus:
+          $ref: '#/components/schemas/ApplicationStatus'
+        changedAt:
+          type: string
+          format: date-time
+
+    Interview:
+      type: object
+      required: [id, applicationId, scheduledAt, type, notes]
+      properties:
+        id:
+          type: string
+          format: uuid
+        applicationId:
+          type: string
+          format: uuid
+        scheduledAt:
+          type: string
+          format: date-time
+          example: '2026-11-02T14:00:00.000Z'
+        type:
+          $ref: '#/components/schemas/InterviewType'
+        notes:
+          $ref: '#/components/schemas/Notes'
+
+    ApplicationListResponse:
+      type: object
+      required: [data, page, pageSize, total]
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/ApplicationListItem'
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        total:
+          type: integer
+
+    ApplicationDetailResponse:
+      type: object
+      required: [application]
+      properties:
+        application:
+          $ref: '#/components/schemas/ApplicationDetail'
+
+    InterviewResponse:
+      type: object
+      required: [interview]
+      properties:
+        interview:
+          $ref: '#/components/schemas/Interview'
+
+    CreateApplicationRequest:
+      type: object
+      additionalProperties: false
+      required: [jobId]
+      properties:
+        jobId:
+          type: string
+          format: uuid
+        status:
+          allOf:
+            - $ref: '#/components/schemas/ApplicationStatus'
+          default: SAVED
+        notes:
+          type: string
+          maxLength: 5000
+
+    UpdateApplicationRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: At least one field. `dateApplied` is server-managed and can't be set.
+      properties:
+        status:
+          $ref: '#/components/schemas/ApplicationStatus'
+        notes:
+          $ref: '#/components/schemas/Notes'
+
+    CreateInterviewRequest:
+      type: object
+      additionalProperties: false
+      required: [scheduledAt, type]
+      properties:
+        scheduledAt:
+          type: string
+          format: date-time
+          description: ISO 8601 with `Z` or an offset; stored and returned in UTC.
+          example: '2026-11-02T10:00:00-04:00'
+        type:
+          $ref: '#/components/schemas/InterviewType'
+        notes:
+          type: string
+          maxLength: 5000
+
+    UpdateInterviewRequest:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        scheduledAt:
+          type: string
+          format: date-time
+        type:
+          $ref: '#/components/schemas/InterviewType'
+        notes:
+          $ref: '#/components/schemas/Notes'
+
+    DashboardSummary:
+      type: object
+      required: [greetingName, counts, recentApplications, upcomingInterviews]
+      properties:
+        greetingName:
+          type: string
+          description: The user's first name.
+          example: Cayden
+        counts:
+          type: object
+          required: [total, inProgress, interview, offer]
+          properties:
+            total:
+              type: integer
+              example: 12
+            inProgress:
+              type: integer
+              example: 5
+            interview:
+              type: integer
+              example: 4
+            offer:
+              type: integer
+              example: 3
+        recentApplications:
+          type: array
+          description: Up to 5, most recent dateApplied first. SAVED applications are not included.
+          maxItems: 5
+          items:
+            type: object
+            required: [id, jobTitle, company, dateApplied, status]
+            properties:
+              id:
+                type: string
+                format: uuid
+              jobTitle:
+                type: string
+              company:
+                type: string
+              dateApplied:
+                type: string
+                format: date-time
+              status:
+                $ref: '#/components/schemas/ApplicationStatus'
+        upcomingInterviews:
+          type: array
+          description: Up to 3 interviews scheduled from now on, soonest first.
+          maxItems: 3
+          items:
+            type: object
+            required: [id, applicationId, scheduledAt, type, jobTitle, company]
+            properties:
+              id:
+                type: string
+                format: uuid
+              applicationId:
+                type: string
+                format: uuid
+              scheduledAt:
+                type: string
+                format: date-time
+              type:
+                $ref: '#/components/schemas/InterviewType'
+              jobTitle:
+                type: string
+              company:
+                type: string
+
+    ApplicationStatusCounts:
+      type: object
+      required: [counts, total]
+      properties:
+        counts:
+          type: object
+          required: [SAVED, APPLIED, IN_PROGRESS, INTERVIEW, OFFER, REJECTED, WITHDRAWN]
+          properties:
+            SAVED:
+              type: integer
+              example: 4
+            APPLIED:
+              type: integer
+              example: 0
+            IN_PROGRESS:
+              type: integer
+              example: 5
+            INTERVIEW:
+              type: integer
+              example: 4
+            OFFER:
+              type: integer
+              example: 3
+            REJECTED:
+              type: integer
+              example: 0
+            WITHDRAWN:
+              type: integer
+              example: 0
+        total:
+          type: integer
+          description: All applications, SAVED included.
+          example: 16
