@@ -1,8 +1,9 @@
 import { CalendarClock, ChevronRight, MapPin } from 'lucide-react';
-import { Link } from 'react-router';
+import { Link, useLocation } from 'react-router';
 
 import { formatDate, timeAgo } from '../../lib/format';
 import { JOB_TYPE_LABELS } from '../../lib/labels';
+import type { BackState } from '../../lib/navigation';
 import { nextStep, type NextStepTone } from '../../lib/nextStep';
 import type { ApplicationListItem, ApplicationStatus } from '../../lib/types';
 import { CompanyBadge } from '../ui/CompanyBadge';
@@ -49,9 +50,12 @@ function NextStepCell({ app }: { app: ApplicationListItem }) {
 }
 
 function DetailsLink({ app }: { app: ApplicationListItem }) {
+  const { pathname, search } = useLocation();
+  const state: BackState = { back: { to: pathname + search, label: 'My Applications' } };
   return (
     <Link
       to={`/applications/${app.id}`}
+      state={state}
       aria-label={`View ${app.job.title} at ${app.job.company}`}
       className={`inline-flex size-11 shrink-0 items-center justify-center rounded-lg text-blue-800 hover:bg-blue-50 ${focusRing}`}
     >

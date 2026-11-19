@@ -71,3 +71,43 @@ export interface StatusCounts {
   counts: Record<ApplicationStatus, number>;
   total: number;
 }
+
+export interface JobFields {
+  id: string;
+  title: string;
+  company: string;
+  location: string;
+  jobType: JobType;
+  description: string;
+  url: string;
+  postedAt: string;
+}
+
+export interface StatusHistoryEntry {
+  id: string;
+  fromStatus: ApplicationStatus | null;
+  toStatus: ApplicationStatus;
+  changedAt: string;
+}
+
+export interface Interview {
+  id: string;
+  applicationId: string;
+  scheduledAt: string;
+  type: InterviewType;
+  notes: string | null;
+}
+
+/** GET /api/applications/:id. History is newest first; interviews soonest first. */
+export interface ApplicationDetail {
+  id: string;
+  jobId: string;
+  status: ApplicationStatus;
+  dateApplied: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  job: JobFields;
+  statusHistory: StatusHistoryEntry[];
+  interviews: Interview[];
+}
