@@ -111,3 +111,9 @@ export interface ApplicationDetail {
   statusHistory: StatusHistoryEntry[];
   interviews: Interview[];
 }
+
+/** An item from GET /api/jobs: the job plus the current user's application for it, if any. */
+export interface JobWithApplication extends JobFields {
+  applicationId: string | null;
+  applicationStatus: ApplicationStatus | null;
+}
