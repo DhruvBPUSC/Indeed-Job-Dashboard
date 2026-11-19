@@ -42,7 +42,9 @@ npm run demo:reset -- --yes     # restore demo account only (dry run without --y
 Run `npm run lint && npm test` before declaring a step done.
 
 `NODE_ENV=test` makes both `src/config/env.ts` and `prisma.config.ts` load `.env.test` (test DB on 5433) instead of `.env`. Vitest sets it automatically. Note `npm run db:test:migrate` uses POSIX
-`NODE_ENV=test` syntax, which doesn't work from cmd/PowerShell on Windows.
+`NODE_ENV=test` syntax, which doesn't work from cmd/PowerShell on Windows. Also on Windows, the
+SIGTERM case in `tests/production.test.ts` always fails (Windows has no SIGTERM; the child is
+force-killed and exits with `null`); it passes on macOS/Linux.
 
 ## Architecture
 

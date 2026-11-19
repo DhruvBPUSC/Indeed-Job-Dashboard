@@ -178,14 +178,14 @@ const PRE_AUTH_FILES = new Set([
 
 describe('user scoping', () => {
   const userOwned = prismaCalls(['application', 'interview', 'statusHistory', 'user']).filter(
-    (c) => !PRE_AUTH_FILES.has(c.file.split('/').pop() ?? ''),
+    (c) => !PRE_AUTH_FILES.has(c.file.split(/[\\/]/).pop() ?? ''),
   );
 
   it('finds the queries to check', () => {
     expect(userOwned.length).toBeGreaterThanOrEqual(15);
   });
 
-  it.each(userOwned.map((c) => [c.file.split('/').pop(), c.call.slice(0, 70), c.call]))(
+  it.each(userOwned.map((c) => [c.file.split(/[\\/]/).pop(), c.call.slice(0, 70), c.call]))(
     '%s: %s… is scoped by userId',
     (_file, _preview, call) => {
       expect(call).toMatch(/\buserId\b/);

@@ -25,10 +25,25 @@ const applicationFields = {
   updatedAt: true,
 } satisfies Prisma.ApplicationSelect;
 
-const listItemSelect = {
-  ...applicationFields,
-  job: { select: { id: true, title: true, company: true } },
-} satisfies Prisma.ApplicationSelect;
+const nextInterviewSelect = {
+  id: true,
+  scheduledAt: true,
+  type: true,
+} satisfies Prisma.InterviewSelect;
+
+function listItemSelect(now: Date) {
+  return {
+    ...applicationFields,
+    job: { select: { id: true, title: true, company: true, location: true, jobType: true } },
+    // Only the soonest upcoming interview, for the list's "next step" column.
+    interviews: {
+      where: { scheduledAt: { gte: now } },
+      orderBy: [{ scheduledAt: 'asc' }, { id: 'asc' }],
+      take: 1,
+      select: nextInterviewSelect,
+    },
+  } satisfies Prisma.ApplicationSelect;
+}
 
 export const interviewSelect = {
   id: true,
@@ -48,7 +63,11 @@ const detailSelect = {
   interviews: { select: interviewSelect, orderBy: { scheduledAt: 'asc' } },
 } satisfies Prisma.ApplicationSelect;
 
-export type ApplicationListItem = Prisma.ApplicationGetPayload<{ select: typeof listItemSelect }>;
+type ListItemRow = Prisma.ApplicationGetPayload<{ select: ReturnType<typeof listItemSelect> }>;
+export type ApplicationListItem = Omit<ListItemRow, 'interviews'> & {
+  /** The soonest interview scheduled from now on, or null if none. */
+  nextInterview: Prisma.InterviewGetPayload<{ select: typeof nextInterviewSelect }> | null;
+};
 export type ApplicationDetail = Prisma.ApplicationGetPayload<{ select: typeof detailSelect }>;
 
 const notFound = (): AppError => AppError.notFound('Application not found');
@@ -90,18 +109,23 @@ function userApplicationsWhere(
 export async function listApplications(
   userId: string,
   query: ListApplicationsQuery,
+  now = new Date(),
 ): Promise<ListResponse<ApplicationListItem>> {
   const { status, q, page, pageSize } = query;
-  const [total, data] = await prisma.$transaction([
+  const [total, rows] = await prisma.$transaction([
     prisma.application.count({ where: userApplicationsWhere(userId, { status, q }) }),
     prisma.application.findMany({
       where: userApplicationsWhere(userId, { status, q }),
-      select: listItemSelect,
+      select: listItemSelect(now),
       orderBy: orderByFor(query),
       ...toSkipTake(query),
     }),
   ]);
 
+  const data = rows.map(({ interviews, ...rest }) => ({
+    ...rest,
+    nextInterview: interviews[0] ?? null,
+  }));
   return { data, page, pageSize, total };
 }
 
