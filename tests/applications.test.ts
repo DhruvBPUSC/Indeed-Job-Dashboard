@@ -35,7 +35,8 @@ interface ApplicationBody {
 }
 interface ListBody {
   data: (Omit<ApplicationBody, 'statusHistory' | 'interviews'> & {
-    job: { id: string; title: string; company: string };
+    job: { id: string; title: string; company: string; location: string; jobType: string };
+    nextInterview: { id: string; scheduledAt: string; type: string } | null;
   })[];
   page: number;
   pageSize: number;
@@ -442,7 +443,7 @@ describe('GET /api/applications', () => {
   }
   const companies = (body: ListBody): string[] => body.data.map((a) => a.job.company);
 
-  it('returns the list shape with job title and company, most recently updated first', async () => {
+  it('returns the list shape with job title, company, location, and type, most recently updated first', async () => {
     await seedApplications();
 
     const body = await list();
@@ -453,9 +454,38 @@ describe('GET /api/applications', () => {
       id: expect.any(String) as string,
       title: 'IT Support Specialist',
       company: 'Zeta Corp',
+      location: 'Columbia, SC',
+      jobType: 'FULL_TIME_ENTRY',
     });
+    expect(body.data[0]?.nextInterview).toBeNull();
     expect(body.data[0]).not.toHaveProperty('statusHistory');
     expect(body.data[0]).not.toHaveProperty('userId');
+  });
+
+  it('includes only the soonest upcoming interview as nextInterview', async () => {
+    const ids = await seedApplications();
+    const applicationId = ids['Zeta Corp'] ?? '';
+    const inDays = (n: number): Date => new Date(Date.now() + n * 86_400_000);
+    await prisma.interview.createMany({
+      data: [
+        { applicationId, scheduledAt: daysAgo(2), type: 'PHONE' }, // past: ignored
+        { applicationId, scheduledAt: inDays(9), type: 'ONSITE' },
+        { applicationId, scheduledAt: inDays(3), type: 'VIRTUAL' },
+      ],
+    });
+
+    const body = await list();
+    const zeta = body.data.find((a) => a.job.company === 'Zeta Corp');
+    const acme = body.data.find((a) => a.job.company === 'Acme');
+
+    expect(zeta?.nextInterview).toEqual({
+      id: expect.any(String) as string,
+      scheduledAt: expect.any(String) as string,
+      type: 'VIRTUAL',
+    });
+    expect(new Date(zeta?.nextInterview?.scheduledAt ?? '').getTime()).toBeGreaterThan(Date.now());
+    expect(acme?.nextInterview).toBeNull();
+    expect(zeta).not.toHaveProperty('interviews');
   });
 
   describe('status filter', () => {

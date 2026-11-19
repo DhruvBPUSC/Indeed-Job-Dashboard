@@ -3,6 +3,7 @@ import { Link } from 'react-router';
 
 import { formatDate } from '../../lib/format';
 import type { RecentApplication } from '../../lib/types';
+import { CompanyBadge } from '../ui/CompanyBadge';
 import { StatusBadge } from '../ui/StatusBadge';
 
 const focusRing =
@@ -57,9 +58,14 @@ export function RecentApplications({ applications }: { applications: RecentAppli
               {applications.map((app) => (
                 <tr key={app.id} className="transition-colors duration-150 hover:bg-slate-50">
                   <td className="px-4 py-3">
-                    <span className="font-semibold text-slate-900">{app.jobTitle}</span>
-                    {/* Company moves under the title when its column is hidden. */}
-                    <span className="block text-slate-600 sm:hidden">{app.company}</span>
+                    <div className="flex items-center gap-3">
+                      <CompanyBadge company={app.company} size="sm" />
+                      <div className="min-w-0">
+                        <span className="font-semibold text-slate-900">{app.jobTitle}</span>
+                        {/* Company moves under the title when its column is hidden. */}
+                        <span className="block text-slate-600 sm:hidden">{app.company}</span>
+                      </div>
+                    </div>
                   </td>
                   <td className="hidden px-4 py-3 text-slate-700 sm:table-cell">{app.company}</td>
                   <td className="hidden px-4 py-3 whitespace-nowrap text-slate-700 md:table-cell">

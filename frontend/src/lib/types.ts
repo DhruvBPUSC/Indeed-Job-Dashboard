@@ -43,3 +43,31 @@ export interface DashboardSummary {
   recentApplications: RecentApplication[];
   upcomingInterviews: UpcomingInterview[];
 }
+
+export type JobType = 'INTERNSHIP' | 'PART_TIME' | 'FULL_TIME_ENTRY';
+
+export interface ListResponse<T> {
+  data: T[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+/** An item from GET /api/applications. */
+export interface ApplicationListItem {
+  id: string;
+  jobId: string;
+  status: ApplicationStatus;
+  dateApplied: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  job: { id: string; title: string; company: string; location: string; jobType: JobType };
+  nextInterview: { id: string; scheduledAt: string; type: InterviewType } | null;
+}
+
+/** GET /api/applications/stats/by-status. `total` includes SAVED. */
+export interface StatusCounts {
+  counts: Record<ApplicationStatus, number>;
+  total: number;
+}

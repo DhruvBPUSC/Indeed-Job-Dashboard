@@ -282,6 +282,7 @@ paths:
       summary: List the current user's applications
       description: >
         Only the logged-in user's applications are returned. "Saved Jobs" is `?status=SAVED`.
+        Each item includes the job's location and type and its next upcoming interview, if any.
       operationId: listApplications
       tags: [applications]
       security:
@@ -869,7 +870,7 @@ components:
 
     ApplicationListItem:
       type: object
-      required: [id, jobId, status, dateApplied, notes, createdAt, updatedAt, job]
+      required: [id, jobId, status, dateApplied, notes, createdAt, updatedAt, job, nextInterview]
       properties:
         id:
           type: string
@@ -894,7 +895,7 @@ components:
           format: date-time
         job:
           type: object
-          required: [id, title, company]
+          required: [id, title, company, location, jobType]
           properties:
             id:
               type: string
@@ -903,6 +904,25 @@ components:
               type: string
             company:
               type: string
+            location:
+              type: string
+              example: Columbia, SC
+            jobType:
+              $ref: '#/components/schemas/JobType'
+        nextInterview:
+          type: object
+          nullable: true
+          description: The soonest interview scheduled from now on, or null if there is none.
+          required: [id, scheduledAt, type]
+          properties:
+            id:
+              type: string
+              format: uuid
+            scheduledAt:
+              type: string
+              format: date-time
+            type:
+              $ref: '#/components/schemas/InterviewType'
 
     ApplicationDetail:
       type: object
