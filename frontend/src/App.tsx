@@ -10,12 +10,13 @@ import { ApplicationDetailPage } from './pages/ApplicationDetailPage';
 import { ApplicationsPage } from './pages/ApplicationsPage';
 import { ComingSoonPage } from './pages/ComingSoonPage';
 import { DashboardPage } from './pages/DashboardPage';
+import { JobDetailPage } from './pages/JobDetailPage';
+import { JobSearchPage } from './pages/JobSearchPage';
 import { SavedJobsPage } from './pages/SavedJobsPage';
 
 const COMING_SOON: { path: string; title: string }[] = [
   { path: 'messages', title: 'Messages' },
   { path: 'resources', title: 'Career Resources' },
-  { path: 'jobs', title: 'Job Search' },
   { path: 'notifications', title: 'Notifications' },
   { path: 'profile', title: 'Your Profile' },
 ];
@@ -37,6 +38,8 @@ export function App() {
           <Route path="applications" element={<ApplicationsPage />} />
           <Route path="applications/:id" element={<ApplicationDetailPage />} />
           <Route path="saved" element={<SavedJobsPage />} />
+          <Route path="jobs" element={<JobSearchPage />} />
+          <Route path="jobs/:id" element={<JobDetailPage />} />
           {COMING_SOON.map(({ path, title }) => (
             <Route key={path} path={path} element={<ComingSoonPage title={title} />} />
           ))}
