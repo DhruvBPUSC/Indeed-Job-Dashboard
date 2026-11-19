@@ -31,13 +31,19 @@ function colorFor(company: string): string {
  * Initials stand-in for a company logo: quick to scan, no third-party logo service. Decorative,
  * because the company name is always shown next to it.
  */
-export function CompanyBadge({ company, size = 'md' }: { company: string; size?: 'sm' | 'md' }) {
+const SIZES = { sm: 'size-8 text-xs', md: 'size-10 text-sm', lg: 'size-14 text-lg' };
+
+export function CompanyBadge({
+  company,
+  size = 'md',
+}: {
+  company: string;
+  size?: keyof typeof SIZES;
+}) {
   return (
     <span
       aria-hidden="true"
-      className={`flex shrink-0 items-center justify-center rounded-lg font-bold ${colorFor(company)} ${
-        size === 'sm' ? 'size-8 text-xs' : 'size-10 text-sm'
-      }`}
+      className={`flex shrink-0 items-center justify-center rounded-lg font-bold ${colorFor(company)} ${SIZES[size]}`}
     >
       {initials(company)}
     </span>

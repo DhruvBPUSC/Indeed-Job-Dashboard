@@ -14,7 +14,10 @@ export interface NextStep {
 }
 
 /** What the student should expect or do next for an application, for the "Next step" column. */
-export function nextStep(app: ApplicationListItem, now = new Date()): NextStep {
+export function nextStep(
+  app: Pick<ApplicationListItem, 'status' | 'dateApplied' | 'nextInterview'>,
+  now = new Date(),
+): NextStep {
   if (app.nextInterview) {
     return {
       label: `${INTERVIEW_TYPE_LABELS[app.nextInterview.type]} interview`,

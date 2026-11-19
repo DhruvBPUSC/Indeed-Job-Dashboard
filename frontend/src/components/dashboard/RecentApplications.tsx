@@ -2,6 +2,7 @@ import { ChevronRight, FileText } from 'lucide-react';
 import { Link } from 'react-router';
 
 import { formatDate } from '../../lib/format';
+import type { BackState } from '../../lib/navigation';
 import type { RecentApplication } from '../../lib/types';
 import { CompanyBadge } from '../ui/CompanyBadge';
 import { StatusBadge } from '../ui/StatusBadge';
@@ -77,6 +78,7 @@ export function RecentApplications({ applications }: { applications: RecentAppli
                   <td className="px-2 py-1 text-right">
                     <Link
                       to={`/applications/${app.id}`}
+                      state={{ back: { to: '/', label: 'Home' } } satisfies BackState}
                       aria-label={`View ${app.jobTitle} at ${app.company}`}
                       className={`inline-flex size-11 items-center justify-center rounded-lg text-blue-800 hover:bg-blue-50 ${focusRing}`}
                     >
